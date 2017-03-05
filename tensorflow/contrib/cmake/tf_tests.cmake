@@ -114,8 +114,31 @@ if (tensorflow_BUILD_PYTHON_TESTS)
   # some environment setup: see AddTest how to add this
   #
 
+  if (WIN32)
+    # build user_ops so we can test the python tests that go with it
+    # TODO: would be good to write a dedicted test op so we don't need to copy
+    # things around and can include gpu as well.
+    set (pywrap_tensorflow_lib "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/pywrap_tensorflow_internal.lib")
+    add_library(ackermann_op SHARED "${tensorflow_source_dir}/tensorflow/user_ops/ackermann_op.cc")
+    target_link_libraries(ackermann_op ${pywrap_tensorflow_lib})
+    add_custom_command(TARGET ackermann_op POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ackermann_op>
+                                     ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/ackermann_op.so)
+    add_dependencies(ackermann_op tf_python_build_pip_package)
+    target_compile_definitions(ackermann_op PRIVATE TF_EXTERN=extern\ __declspec\(dllimport\))
+ 
+    # the tests want the .so in the same directory as the test itself, so copy the test to the bin dir
+    file(COPY "${tensorflow_source_dir}/tensorflow/user_ops/ackermann_test.py"
+        DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/"
+    )
+    set(tf_user_ops_test_src_py
+        "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/ackermann_test.py"
+    )
+  endif()
+
   # include all test
   file(GLOB_RECURSE tf_test_src_py
+    ${tf_user_ops_test_src_py}
     "${tensorflow_source_dir}/tensorflow/python/debug/cli/*_test.py"
     "${tensorflow_source_dir}/tensorflow/python/debug/lib/*_test.py"
     "${tensorflow_source_dir}/tensorflow/python/debug/wrappers/*_test.py"

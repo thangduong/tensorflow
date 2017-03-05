@@ -571,9 +571,7 @@ add_custom_command(
 # pywrap_tensorflow_internal is a shared library containing all of the
 # TensorFlow runtime and the standard ops and kernels. These are installed into
 # tf_python/tensorflow/python/.
-# TODO(mrry): Refactor this to expose a framework library that
-# facilitates `tf.load_op_library()`.
-add_library(pywrap_tensorflow_internal SHARED
+set (pywrap_tensorflow_internal_src
     "${tensorflow_source_dir}/tensorflow/python/client/tf_session_helper.h"
     "${tensorflow_source_dir}/tensorflow/python/client/tf_session_helper.cc"
     "${tensorflow_source_dir}/tensorflow/python/framework/cpp_shape_inference.h"
@@ -597,6 +595,54 @@ add_library(pywrap_tensorflow_internal SHARED
     "${tensorflow_source_dir}/tensorflow/c/tf_status_helper.cc"
     "${tensorflow_source_dir}/tensorflow/c/tf_status_helper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/pywrap_tensorflow_internal.cc"
+)
+
+if(WIN32)
+    # Windows: To make the tensorflow c/c++ api available by linking against
+    # tensorflow.dll, we need to take an extra step to export the symbols
+    # for c/c++ api in the dll.
+    # We do this by creating a def file with the exported symbols. The linker
+    # has a limit of 64K symbols that can be exported.
+    # The way we create the deffile:
+    # 1. create a static library with the same objects like the dll
+    # 2. get all symbols from the static library
+    # 3. filter the symbols by namespace so only things like tensorflow:: are taken
+    # 4. write this into a def file that we pass to the linker
+    #
+    add_library(pywrap_tensorflow_internal_static STATIC
+        #${pywrap_tensorflow_internal_src}
+        $<TARGET_OBJECTS:tf_core_lib>
+        $<TARGET_OBJECTS:tf_core_cpu>
+        $<TARGET_OBJECTS:tf_core_framework>
+        $<TARGET_OBJECTS:tf_core_ops>
+        $<TARGET_OBJECTS:tf_core_direct_session>
+        $<TARGET_OBJECTS:tf_tools_transform_graph_lib>
+        $<$<BOOL:${tensorflow_ENABLE_GRPC_SUPPORT}>:$<TARGET_OBJECTS:tf_core_distributed_runtime>>
+        $<TARGET_OBJECTS:tf_core_kernels>
+        $<$<BOOL:${tensorflow_ENABLE_GPU}>:$<TARGET_OBJECTS:tf_core_kernels_cpu_only>>
+        $<$<BOOL:${tensorflow_ENABLE_GPU}>:$<TARGET_OBJECTS:tf_stream_executor>>
+    )
+    target_include_directories(pywrap_tensorflow_internal_static PUBLIC
+        ${PYTHON_INCLUDE_DIR}
+        ${NUMPY_INCLUDE_DIR}
+    )
+    target_link_libraries(pywrap_tensorflow_internal_static
+        tf_protos_cc
+        tf_python_protos_cc
+    )
+    set(pywrap_tensorflow_deffile "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/pywrap_tensorflow.def")
+    set_source_files_properties(${pywrap_tensorflow_deffile} PROPERTIES GENERATED TRUE)
+
+    add_custom_command(TARGET pywrap_tensorflow_internal_static POST_BUILD
+        COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/create_deffile.py
+            --input $<TARGET_FILE:pywrap_tensorflow_internal_static>
+            --output ${pywrap_tensorflow_deffile}
+    )
+endif(WIN32)
+
+
+add_library(pywrap_tensorflow_internal SHARED
+    ${pywrap_tensorflow_internal_src}
     $<TARGET_OBJECTS:tf_core_lib>
     $<TARGET_OBJECTS:tf_core_cpu>
     $<TARGET_OBJECTS:tf_core_framework>
@@ -607,7 +653,13 @@ add_library(pywrap_tensorflow_internal SHARED
     $<TARGET_OBJECTS:tf_core_kernels>
     $<$<BOOL:${tensorflow_ENABLE_GPU}>:$<TARGET_OBJECTS:tf_core_kernels_cpu_only>>
     $<$<BOOL:${tensorflow_ENABLE_GPU}>:$<TARGET_OBJECTS:tf_stream_executor>>
+    ${pywrap_tensorflow_deffile}
 )
+
+if(WIN32)
+    add_dependencies(pywrap_tensorflow_internal pywrap_tensorflow_internal_static)
+endif(WIN32)
+
 target_include_directories(pywrap_tensorflow_internal PUBLIC
     ${PYTHON_INCLUDE_DIR}
     ${NUMPY_INCLUDE_DIR}
