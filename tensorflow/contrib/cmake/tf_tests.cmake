@@ -124,6 +124,7 @@ if (tensorflow_BUILD_PYTHON_TESTS)
     add_custom_command(TARGET ackermann_op POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ackermann_op>
                                      ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/ackermann_op.so)
+    add_dependencies(ackermann_op pywrap_tensorflow_internal tf_python_ops)
     add_dependencies(tf_python_build_pip_package ackermann_op)
     target_compile_definitions(ackermann_op PRIVATE TF_EXTERN=extern\ __declspec\(dllimport\))
  
