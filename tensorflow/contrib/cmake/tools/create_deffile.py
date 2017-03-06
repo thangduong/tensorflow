@@ -66,7 +66,7 @@ def main():
         sym = cols[1]
         tmpfile.file.write(sym + "\n")
         candidates.append(sym)
-        tmpfile.file.close()
+    tmpfile.file.close()
     proc.wait()
 
     # Run the symbols through undname to get their undecorated name
